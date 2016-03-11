@@ -10,9 +10,9 @@ module.exports = function (grunt) {
                     jasmine: false,
                     describe: false,
                     it: false,
-                    expect:false,
+                    expect: false,
                     beforeEach: false,
-                    afterEach:false,
+                    afterEach: false,
                     sinon: false
                 },
                 browser: true,
@@ -21,9 +21,9 @@ module.exports = function (grunt) {
         },
         testem: {
             unit: {
-                options:{
-                    framework:'jasmine2',
-                    launch_in_dev:['PhantomJS'],
+                options: {
+                    framework: 'jasmine2',
+                    launch_in_dev: ['PhantomJS'],
                     before_test: 'grunt jshint',
                     serve_files: [
                         'node_modules/lodash/lodash.min.js',
