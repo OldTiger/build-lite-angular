@@ -1,123 +1,149 @@
 'use strict';
-
 function Scope() {
     this.$$watchers = [];
-<<<<<<< 81a891c0bc572564580e2a9358cc185a9c22e0b5
-}
-function initWatchVal() {
-}
-Scope.prototype.$watch = function (watchFn, listenerFn) {
-=======
     this.$$lastDirtyWatch = null;
     this.$$asyncQueue = [];
+    this.$$applyAsyncQueue = [];
     this.$$phase = null;
+    this.$$applyAsyncId = null;
+    this.$$postDigestQueue = [];
 }
-function initWatchVal() {
-}
+Scope.prototype.$$postDigest = function (fn) {
+    this.$$postDigestQueue.push(fn);
+};
 Scope.prototype.$beginPhase = function (phase) {
     if (this.$$phase) {
-        throw this.$$phae + ' already in progress.';
+        throw this.$$phase;
     }
     this.$$phase = phase;
 };
 Scope.prototype.$clearPhase = function () {
     this.$$phase = null;
 };
-Scope.prototype.$watch = function (watchFn, listenerFn, valueEq) {
->>>>>>> Chapter 1: Scope
-    var watcher = {
-        watchFn: watchFn,
-        listenerFn: listenerFn || function () {
-        },
-<<<<<<< 81a891c0bc572564580e2a9358cc185a9c22e0b5
-=======
-        valueEq: !!valueEq,
->>>>>>> Chapter 1: Scope
-        last: initWatchVal
-    };
-
-    this.$$watchers.push(watcher);
-<<<<<<< 81a891c0bc572564580e2a9358cc185a9c22e0b5
-};
-Scope.prototype.$digest = function() {
-    var ttl = 10;
-    var dirty;
-    do {
-        dirty = this.$$digestOnce();
-        if (dirty && !(--ttl)) {
-            throw "10 digest iterations reached";
-        }
-    } while (dirty);
-=======
-    this.$$lastDirtyWatch = null;
-};
 Scope.prototype.$digest = function () {
     var ttl = 10;
     var dirty;
     this.$$lastDirtyWatch = null;
-    this.$beginPhase('$digest');
+    this.$beginPhase("$digest");
+
+    if (this.$$applyAsyncId) {
+        clearTimeout(this.$$applyAsyncId);
+        this.$$flushApplyAsync();
+    }
     do {
         while (this.$$asyncQueue.length) {
-            var asyncTask = this.$$asyncQueue.shift();
-            asyncTask.scope.$eval(asyncTask.expression)
+            try {
+                var asyncTask = this.$$asyncQueue.shift();
+                asyncTask.scope.$eval(asyncTask.expression);
+            } catch (e) {
+                console.error(e);
+            }
+
         }
         dirty = this.$$digestOnce();
-        if ((dirty || this.$$asyncQueue.length) && !(--ttl)) {
+        if ((dirty || this.$$asyncQueue.length) && !(ttl--)) {
             this.$clearPhase();
             throw "10 digest iterations reached";
         }
-    } while (dirty || this.$$asyncQueue.length)
+    } while (dirty || this.$$asyncQueue.length);
     this.$clearPhase();
->>>>>>> Chapter 1: Scope
+    while (this.$$postDigestQueue.length) {
+        try {
+            this.$$postDigestQueue.shift()();
+        }
+        catch (e) {
+            console.error(e);
+        }
+    }
 };
+
 Scope.prototype.$$digestOnce = function () {
     var self = this;
     var newValue, oldValue, dirty;
     _.forEach(this.$$watchers, function (watcher) {
-        newValue = watcher.watchFn(self);
-        oldValue = watcher.last;
-<<<<<<< 81a891c0bc572564580e2a9358cc185a9c22e0b5
-        if (newValue !== oldValue) {
-            watcher.last = newValue;
-            watcher.listenerFn(newValue, (oldValue === initWatchVal ? newValue : oldValue), self);
-            dirty = true;
+        try {
+            newValue = watcher.watchFn(self);
+            oldValue = watcher.last;
+            if (!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
+                self.$$lastDirtyWatch = watcher;
+                watcher.last = (watcher.valueEq ? _.cloneDeep(newValue) : newValue);
+                watcher.listenerFn(newValue,
+                    (oldValue === initWatchVal ? newValue : oldValue),
+                    self);
+                dirty = true;
+            } else if (self.$$lastDirtyWatch === watcher) {
+                return false;
+            }
+        } catch (e) {
+            console.error(e);
         }
     });
-    return dirty;
-=======
-        if (!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
-            self.$$lastDirtyWatch = watcher;
-            watcher.last = (watcher.valueEq ? _.cloneDeep(newValue) : newValue);
-            watcher.listenerFn(newValue, (oldValue === initWatchVal ? newValue : oldValue), self);
-            dirty = true;
-        } else if (self.$$lastDirtyWatch === watcher) {
-            return false;
-        }
-    });
-    return dirty;
-};
 
-Scope.prototype.$$areEqual = function (newValue, oldValue, valueEq) {
-    if (valueEq) {
-        return _.isEqual(newValue, oldValue);
-    } else {
-        return newValue === oldValue || (typeof newValue === 'number' &&
-            typeof oldValue === 'number' && isNaN(newValue) && isNaN(oldValue));
-    }
-};
-Scope.prototype.$eval = function (expr, locals) {
-    return expr(this, locals);
+
+    return dirty;
 };
 Scope.prototype.$apply = function (expr) {
     try {
-        this.$beginPhase('$apply');
+        this.$beginPhase("$apply");
         return this.$eval(expr);
     } finally {
         this.$clearPhase();
         this.$digest();
     }
 };
+
+
 Scope.prototype.$evalAsync = function (expr) {
+    var self = this;
+    if (!self.$$phase && !self.$$asyncQueue.length) {
+        setTimeout(function () {
+            if (self.$$asyncQueue.length) {
+                self.$digest();
+            }
+        }, 0);
+    }
+
     this.$$asyncQueue.push({scope: this, expression: expr});
->>>>>>> Chapter 1: Scope
 };
+
+Scope.prototype.$eval = function (expr, locals) {
+    return expr(this, locals);
+};
+Scope.prototype.$$areEqual = function (newValue, oldValue, valueEq) {
+    if (valueEq) {
+        return _.isEqual(newValue, oldValue);
+    } else {
+        return newValue === oldValue ||
+            (typeof newValue === 'number' && typeof oldValue === 'number' &&
+            isNaN(newValue) && isNaN(oldValue));
+    }
+};
+Scope.prototype.$watch = function (watchFn, listenerFn) {
+    var watcher = {
+        watchFn: watchFn,
+        listenerFn: listenerFn || function () {
+        }, last: initWatchVal
+    };
+    this.$$watchers.push(watcher);
+    this.$$lastDirtyWatch = null;
+};
+function initWatchVal() {
+}
+Scope.prototype.$applyAsync = function (expr) {
+    var self = this;
+    self.$$applyAsyncQueue.push(function () {
+        self.$eval(expr);
+    });
+    if (self.$$applyAsyncId === null) {
+        self.$$applyAsyncId = setTimeout(function () {
+            self.$apply(_.bind(self.$$flushApplyAsync, self));
+        }, 0)
+    }
+};
+Scope.prototype.$$flushApplyAsync = function () {
+    while (this.$$applyAsyncQueue.length) {
+        this.$$applyAsyncQueue.shift()();
+    }
+    this.$$applyAsyncId = null;
+}
+
