@@ -38,7 +38,6 @@ Scope.prototype.$digest = function () {
             } catch (e) {
                 console.error(e);
             }
-
         }
         dirty = this.$$digestOnce();
         if ((dirty || this.$$asyncQueue.length) && !(ttl--)) {
@@ -60,19 +59,21 @@ Scope.prototype.$digest = function () {
 Scope.prototype.$$digestOnce = function () {
     var self = this;
     var newValue, oldValue, dirty;
-    _.forEach(this.$$watchers, function (watcher) {
+    _.forEachRight(this.$$watchers, function (watcher) {
         try {
-            newValue = watcher.watchFn(self);
-            oldValue = watcher.last;
-            if (!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
-                self.$$lastDirtyWatch = watcher;
-                watcher.last = (watcher.valueEq ? _.cloneDeep(newValue) : newValue);
-                watcher.listenerFn(newValue,
-                    (oldValue === initWatchVal ? newValue : oldValue),
-                    self);
-                dirty = true;
-            } else if (self.$$lastDirtyWatch === watcher) {
-                return false;
+            if (watcher) {
+                newValue = watcher.watchFn(self);
+                oldValue = watcher.last;
+                if (!self.$$areEqual(newValue, oldValue, watcher.valueEq)) {
+                    self.$$lastDirtyWatch = watcher;
+                    watcher.last = (watcher.valueEq ? _.cloneDeep(newValue) : newValue);
+                    watcher.listenerFn(newValue,
+                        (oldValue === initWatchVal ? newValue : oldValue),
+                        self);
+                    dirty = true;
+                } else if (self.$$lastDirtyWatch === watcher) {
+                    return false;
+                }
             }
         } catch (e) {
             console.error(e);
@@ -119,13 +120,22 @@ Scope.prototype.$$areEqual = function (newValue, oldValue, valueEq) {
     }
 };
 Scope.prototype.$watch = function (watchFn, listenerFn) {
+    var self = this;
     var watcher = {
         watchFn: watchFn,
         listenerFn: listenerFn || function () {
         }, last: initWatchVal
     };
-    this.$$watchers.push(watcher);
+    this.$$watchers.unshift(watcher);
     this.$$lastDirtyWatch = null;
+
+    return function () {
+        var index = self.$$watchers.indexOf(watcher);
+        if (index >= 0) {
+            self.$$watchers.splice(index, 1);
+            self.$$lastDirtyWatch = null;
+        }
+    }
 };
 function initWatchVal() {
 }
@@ -137,13 +147,62 @@ Scope.prototype.$applyAsync = function (expr) {
     if (self.$$applyAsyncId === null) {
         self.$$applyAsyncId = setTimeout(function () {
             self.$apply(_.bind(self.$$flushApplyAsync, self));
-        }, 0)
+        }, 0);
     }
 };
 Scope.prototype.$$flushApplyAsync = function () {
     while (this.$$applyAsyncQueue.length) {
-        this.$$applyAsyncQueue.shift()();
+        try {
+            this.$$applyAsyncQueue.shift()();
+        } catch (e) {
+            console.error(e);
+        }
     }
     this.$$applyAsyncId = null;
-}
 
+};
+
+Scope.prototype.$watchGroup = function (watchFns, listenerFn) {
+    var self = this;
+    var newValues = new Array(watchFns.length);
+    var oldValues = new Array(watchFns.length);
+    var changeReactionScheduled = false;
+    var firstRun = true;
+    var destroyFunctions = _.map(watchFns, function (watchFn, i) {
+        return self.$watch(watchFn, function (newValue, oldValue) {
+            newValues[i] = newValue;
+            oldValues[i] = oldValue;
+            if(!changeReactionScheduled){
+                changeReactionScheduled = true;
+                self.$evalAsync(watchGroupListener);
+            }
+        })
+    });
+    if (watchFns.length === 0) {
+        var shouldCall = true;
+        self.$evalAsync(function () {
+            if(shouldCall){
+                listenerFn(newValues, newValues, self);
+            }
+        });
+        return function (){
+            shouldCall = false;
+        };
+    }
+    function watchGroupListener() {
+        if (firstRun) {
+            firstRun = false;
+            listenerFn(newValues, newValues, self);
+        } else {
+            listenerFn(newValues, oldValues, self);
+        }
+
+        changeReactionScheduled = false;
+    }
+
+    return function () {
+        _.forEach(destroyFunctions, function (destroyFunc) {
+            destroyFunc();
+        });
+    };
+};
