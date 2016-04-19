@@ -7,6 +7,7 @@ function Scope() {
     this.$$phase = null;
     this.$$applyAsyncId = null;
     this.$$postDigestQueue = [];
+    this.$$children = [];
 }
 Scope.prototype.$$postDigest = function (fn) {
     this.$$postDigestQueue.push(fn);
@@ -119,12 +120,14 @@ Scope.prototype.$$areEqual = function (newValue, oldValue, valueEq) {
             isNaN(newValue) && isNaN(oldValue));
     }
 };
-Scope.prototype.$watch = function (watchFn, listenerFn) {
+Scope.prototype.$watch = function (watchFn, listenerFn, valueEq) {
     var self = this;
     var watcher = {
         watchFn: watchFn,
         listenerFn: listenerFn || function () {
-        }, last: initWatchVal
+        },
+        last: initWatchVal,
+        valueEq: valueEq
     };
     this.$$watchers.unshift(watcher);
     this.$$lastDirtyWatch = null;
@@ -172,7 +175,7 @@ Scope.prototype.$watchGroup = function (watchFns, listenerFn) {
         return self.$watch(watchFn, function (newValue, oldValue) {
             newValues[i] = newValue;
             oldValues[i] = oldValue;
-            if(!changeReactionScheduled){
+            if (!changeReactionScheduled) {
                 changeReactionScheduled = true;
                 self.$evalAsync(watchGroupListener);
             }
@@ -181,11 +184,11 @@ Scope.prototype.$watchGroup = function (watchFns, listenerFn) {
     if (watchFns.length === 0) {
         var shouldCall = true;
         self.$evalAsync(function () {
-            if(shouldCall){
+            if (shouldCall) {
                 listenerFn(newValues, newValues, self);
             }
         });
-        return function (){
+        return function () {
             shouldCall = false;
         };
     }
@@ -205,4 +208,16 @@ Scope.prototype.$watchGroup = function (watchFns, listenerFn) {
             destroyFunc();
         });
     };
+};
+
+Scope.prototype.$new = function () {
+    var ChildScope = function () {
+
+    };
+    ChildScope.prototype = this;
+    var child = new ChildScope();
+    this.$$children.push(child);
+    child.$$watchers = [];
+    child.$$children = [];
+    return child;
 };
