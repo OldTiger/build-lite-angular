@@ -9,6 +9,7 @@ function Scope() {
     this.$$postDigestQueue = [];
     this.$$children = [];
     this.$root = this;
+    this.$$listeners = {};
 }
 Scope.prototype.$$postDigest = function (fn) {
     this.$$postDigestQueue.push(fn);
@@ -215,23 +216,26 @@ Scope.prototype.$watchGroup = function (watchFns, listenerFn) {
     };
 };
 
-Scope.prototype.$new = function (isolated) {
+Scope.prototype.$new = function (isolated, parent) {
     var child;
+    parent = parent || this;
     if (isolated) {
         child = new Scope();
-        child.$$asyncQueue = this.$$asyncQueue;
-        child.$$postDigestQueue = this.$$postDigestQueue;
-        child.$$applyAsyncQueue = this.$$applyAsyncQueue;
-        child.$root = this.$root;
+        child.$$asyncQueue = parent.$$asyncQueue;
+        child.$$postDigestQueue = parent.$$postDigestQueue;
+        child.$$applyAsyncQueue = parent.$$applyAsyncQueue;
+        child.$root = parent.$root;
     } else {
         var ChildScope = function () {
         };
         ChildScope.prototype = this;
         child = new ChildScope();
     }
-    this.$$children.push(child);
+    parent.$$children.push(child);
     child.$$watchers = [];
+    child.$$listeners = {};
     child.$$children = [];
+    child.$parent = parent;
     return child;
 };
 Scope.prototype.$$everyScope = function (fn) {
@@ -242,4 +246,175 @@ Scope.prototype.$$everyScope = function (fn) {
     } else {
         return false;
     }
+};
+Scope.prototype.$destroy = function () {
+    if (this.$parent) {
+        var siblings = this.$parent.$$children;
+        var indexOfThis = siblings.indexOf(this);
+        if (indexOfThis >= 0) {
+            siblings.splice(indexOfThis, 1);
+        }
+    }
+    this.$$watchers = null;
+};
+Scope.prototype.$watchCollection = function (watchFn, listenerFn) {
+    var self = this;
+    var newValue;
+    var oldValue;
+    var changeCount = 0;
+    var oldLength;
+    var veryOldValue;
+    var firstRun = true;
+    var trackVeryOldValue = (listenerFn.length > 1);
+
+    var internalWatchFn = function (scope) {
+        var newLength;
+        newValue = watchFn(scope);
+        if (_.isObject(newValue)) {
+            if (_.isArrayLike(newValue)) {
+                if (!_.isArray(oldValue)) {
+                    changeCount++;
+                    oldValue = [];
+                }
+                if (newValue.length !== oldValue.length) {
+                    changeCount++;
+                    oldValue.length = newValue.length;
+                }
+                _.forEach(newValue, function (newItem, i) {
+                    var bothNaN = _.isNaN(newItem) && _.isNaN(oldValue[i]);
+                    if (!bothNaN && newItem !== oldValue[i]) {
+                        changeCount++;
+                        oldValue[i] = newItem;
+                    }
+                });
+            } else {
+                if (!_.isObject(oldValue) || _.isArrayLike(oldValue)) {
+                    changeCount++;
+                    oldValue = {};
+                    oldLength = 0;
+                }
+                newLength = 0;
+                _.forOwn(newValue, function (newVal, key) {
+                    newLength++;
+                    if (oldValue.hasOwnProperty(key)) {
+                        var bothNaN = _.isNaN(newVal) && _.isNaN(oldValue[key]);
+                        if (!bothNaN && oldValue[key] !== newVal) {
+                            changeCount++;
+                            oldValue[key] = newVal;
+                        }
+                    } else {
+                        changeCount++;
+                        oldLength++;
+                        oldValue[key] = newVal;
+                    }
+                });
+                if (oldLength > newLength) {
+                    changeCount++;
+                    _.forOwn(oldValue, function (oldVal, key) {
+                        if (!newValue.hasOwnProperty(key)) {
+                            oldLength--;
+                            delete oldValue[key];
+                        }
+                    })
+                }
+            }
+        } else {
+            if (!self.$$areEqual(newValue, oldValue, false)) {
+                changeCount++;
+            }
+            oldValue = newValue;
+        }
+        return changeCount;
+    };
+
+    var internalListerFn = function () {
+        if (firstRun) {
+            listenerFn(newValue, newValue, self);
+            firstRun = false;
+        } else {
+            listenerFn(newValue, veryOldValue, self);
+        }
+        if (trackVeryOldValue) {
+            veryOldValue = _.clone(newValue);
+        }
+    };
+    return this.$watch(internalWatchFn, internalListerFn);
+};
+Scope.prototype.$on = function (eventName, listener) {
+    var listeners = this.$$listeners[eventName];
+    if (!listeners) {
+        this.$$listeners[eventName] = listeners = [];
+    }
+    listeners.push(listener);
+    return function () {
+        var index = listeners.indexOf(listener);
+        if (index >= 0) {
+            listeners[index] = null;
+        }
+    }
+};
+Scope.prototype.$emit = function (eventName) {
+    var propagetionStopped = false;
+    var additionalArgs = Array.prototype.slice.call(arguments, 1, arguments.length);
+    var event = {
+        name: eventName,
+        targetScope: this,
+        stopPropagation: function () {
+            propagetionStopped = true;
+        },
+        preventDefault: function () {
+            event.defaultPrevented = true;
+        }
+
+    };
+    var listenerArgs = [event].concat(additionalArgs);
+    var scope = this;
+    while (scope && !propagetionStopped) {
+        event.currentScope = scope;
+        scope.$$fireEventOnScope(eventName, listenerArgs);
+        scope = scope.$parent;
+    }
+    event.currentScope = null;
+    return event;
+};
+Scope.prototype.$broadcast = function (eventName) {
+    var additionalArgs = Array.prototype.slice.call(arguments, 1, arguments.length);
+    var event = {
+        name: eventName, targetScope: this,
+        preventDefault: function () {
+            event.defaultPrevented = true;
+        }
+    };
+    var listenerArgs = [event].concat(additionalArgs);
+    this.$$everyScope(function (scope) {
+        event.currentScope = scope;
+        scope.$$fireEventOnScope(eventName, listenerArgs);
+        return true;
+    });
+    event.currentScope = null;
+    return event;
+};
+
+
+Scope.prototype.$$fireEventOnScope = function (eventName, listenerArgs) {
+    var listeners = this.$$listeners[eventName] || [];
+    var i = 0;
+
+    while (i < listeners.length) {
+        if (listeners[i] === null) {
+            listeners.splice(i, 1);
+        } else {
+            listeners[i].apply(null, listenerArgs);
+            i++;
+        }
+    }
+};
+Scope.prototype.$destroy = function () {
+    this.$broadcast('$destroy');
+    if (this.$parent) {
+        var siblings = this.$parent.$$children; var indexOfThis = siblings.indexOf(this); if (indexOfThis >= 0) {
+            siblings.splice(indexOfThis, 1);
+        }
+    }
+    this.$$watchers = null;
 };
