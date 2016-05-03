@@ -404,7 +404,11 @@ Scope.prototype.$$fireEventOnScope = function (eventName, listenerArgs) {
         if (listeners[i] === null) {
             listeners.splice(i, 1);
         } else {
-            listeners[i].apply(null, listenerArgs);
+            try {
+                listeners[i].apply(null, listenerArgs);
+            } catch (e) {
+                console.error(e);
+            }
             i++;
         }
     }
@@ -412,9 +416,12 @@ Scope.prototype.$$fireEventOnScope = function (eventName, listenerArgs) {
 Scope.prototype.$destroy = function () {
     this.$broadcast('$destroy');
     if (this.$parent) {
-        var siblings = this.$parent.$$children; var indexOfThis = siblings.indexOf(this); if (indexOfThis >= 0) {
+        var siblings = this.$parent.$$children;
+        var indexOfThis = siblings.indexOf(this);
+        if (indexOfThis >= 0) {
             siblings.splice(indexOfThis, 1);
         }
     }
     this.$$watchers = null;
+    this.$$listeners = {};
 };
