@@ -1460,7 +1460,17 @@ describe("Scope", function () {
             scope.$emit('myEvent');
             expect(listener).not.toHaveBeenCalled();
         });
-
+        it("will not parse a string with mismatching quotes", function() {
+            expect(function() { parse( '"abc\''  ); }).toThrow();
+        });
+        it("can parse a string with single quotes inside", function () {
+            var fn = parse("'a\\\'b'");
+            expect(fn()).toEqual('a\'b');
+        });
+        it('can parse a string with double quotes inside', function () {
+            var fn = parse("'a\\\"b'");
+            expect(fn()).toEqual('a\"b');
+        })
     });
 
 });
