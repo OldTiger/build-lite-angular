@@ -366,7 +366,8 @@ ASTCompiler.prototype.recurse = function (ast, context, create) {
                         this.not(this.getHasOwnProperty( 's' , ast.name)),
                     this.assign(this.nonComputedMember( 's' , ast.name),  '{}' ));
             }
-
+            this.if_(this.not(this.getHasOwnProperty( "l" , ast.name)) + '  && s' ,
+                this.assign(intoId, this.nonComputedMember( 's' , ast.name)));
             if (context) {
                 context.context = this.getHasOwnProperty('l', ast.name) + '?l:s';
                 context.name = ast.name;

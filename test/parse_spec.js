@@ -1,6 +1,20 @@
 'use strict';
 
 describe('parse', function () {
+
+
+    it( 'creates the objects in the assignment path that do not exist ', function() {
+        var fn = parse( 'some["nested"].property.path = 42 ');
+        var scope = {};
+        fn(scope);
+        expect(scope.some.nested.property.path).toBe(42);
+    });
+    it('looks up an attribute from the scope', function () {
+        var fn = parse('aKey');
+        expect(fn({aKey: 42})).toBe(42);
+        expect(fn({})).toBeUndefined();
+        expect(fn({})).toBeUndefined();
+    });
     it('parses a simple attribute assignment', function () {
         var fn = parse('anAttribute = 42');
         var scope = {};
@@ -102,12 +116,7 @@ describe('parse', function () {
         var fn = parse('{a: 1, b: [2, 3], c: {d: 4}}');
         expect(fn()).toEqual({a: 1, b: [2, 3], c: {d: 4}});
     });
-    it('looks up an attribute from the scope', function () {
-        var fn = parse('aKey');
-        expect(fn({aKey: 42})).toBe(42);
-        expect(fn({})).toBeUndefined();
-        expect(fn({})).toBeUndefined();
-    });
+
     it('returns undefined when looking up attribute from undefined', function () {
         var fn = parse('aKey');
         expect(fn()).toBeUndefined();
@@ -282,11 +291,6 @@ describe('parse', function () {
         var scope = {anArray: [{}]};
         fn(scope); expect(scope.anArray[0].anAttribute).toBe(42);
     });
-    it( 'creates the objects in the assignment path that do not exist ', function() {
-        var fn = parse( 'some["nested"].property.path = 42 ');
-        var scope = {};
-        fn(scope);
-        expect(scope.some.nested.property.path).toBe(42);
-    });
+
 
 });
