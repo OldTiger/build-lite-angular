@@ -1,7 +1,12 @@
 'use strict';
 
 describe('parse', function () {
-
+    it('parses a simple attribute assignment', function () {
+        var fn = parse('anAttribute = 42');
+        var scope = {};
+        fn(scope);
+        expect(scope.anAttribute).toBe(42);
+    });
     it('can parse an interger', function () {
         var fn = parse('42');
         expect(fn).toBeDefined();
@@ -277,4 +282,11 @@ describe('parse', function () {
         var scope = {anArray: [{}]};
         fn(scope); expect(scope.anArray[0].anAttribute).toBe(42);
     });
+    it( 'creates the objects in the assignment path that do not exist ', function() {
+        var fn = parse( 'some["nested"].property.path = 42 ');
+        var scope = {};
+        fn(scope);
+        expect(scope.some.nested.property.path).toBe(42);
+    });
+
 });
