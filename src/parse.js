@@ -11,9 +11,22 @@ var APPLY = Function.prototype.apply;
 var BIND = Function.prototype.bind;
 var OPERATORS = {
     '+': true,
-    '!':true,
-    '-': true
+    '!': true,
+    '-': true,
+    '*': true,
+    '/': true,
+    '%': true,
+    '=': true,
+    '==': true,
+    '!=': true,
+    '===': true,
+    '!==': true,
+    '<': true,
+    '>': true,
+    '<=': true,
+    '>=': true
 };
+
 function ensureSafeFunction(obj) {
     if (obj) {
         if (obj.constructor === obj) {
@@ -49,9 +62,10 @@ var ESCAPES = {
 function Lexer() {
 
 }
-Lexer.prototype.peek = function () {
-    return this.index < this.text.length - 1 ?
-        this.text.charAt(this.index + 1) :
+Lexer.prototype.peek = function (n) {
+    n = n || 1;
+    return this.index + n < this.text.length ?
+        this.text.charAt(this.index + n) :
         false;
 };
 Lexer.prototype.isNumber = function (ch) {
@@ -85,16 +99,22 @@ Lexer.prototype.lex = function (text) {
             this.readIdent();
         } else if (this.isWhitespace(this.ch)) {
             this.index++;
-        } else if (this.is('[],{}:.()=')) {
+        } else if (this.is('[],{}:.()')) {
             this.tokens.push({
                 text: this.ch
             });
             this.index++;
         } else {
-            var op = OPERATORS[this.ch];
-            if (op) {
-                this.tokens.push({text: this.ch});
-                this.index++;
+            var ch = this.ch;
+            var ch2 = this.ch+this.peek();
+            var ch3 = this.ch +this.peek()+this.peek(2);
+            var op = OPERATORS[ch];
+            var op2 = OPERATORS[ch2];
+            var op3 = OPERATORS[ch3];
+            if (op||op2||op3) {
+                var token = op3 ? ch3 : (op2 ? ch2 : ch);
+                this.tokens.push({text: token});
+                this.index+= token.length;
             } else {
                 throw  'Unexpected next character:' + this.ch;
             }
@@ -210,10 +230,11 @@ AST.MemberExpression = 'MemberExpression';
 AST.CallExpression = 'CallExpression';
 AST.AssignmentExpression = 'AssignmentExpression';
 AST.UnaryExpression = 'UnaryExpression';
-AST.prototype.additive = function() {
+AST.BinaryExpression = 'BinaryExpression';
+AST.prototype.additive = function () {
     var left = this.multiplicative();
     var token;
-    while ((token = this.expect( '+' )) || (token = this.expect( '-' ))) {
+    while ((token = this.expect('+')) || (token = this.expect('-'))) {
         left = {
             type: AST.BinaryExpression,
             left: left,
@@ -223,9 +244,44 @@ AST.prototype.additive = function() {
     }
     return left;
 };
+AST.prototype.equality = function () {
+    var left = this.relational();
+    var token;
+    while((token = this.expect('==','!=','===','===','!=='))){
+        left = {
+            type: AST.BinaryExpression, left: left,
+            operator: token.text, right: this.relational()
+        };
+    }
+    return left;
+};
+AST.prototype.relational = function () {
+    var left = this.additive();
+    var token;
+    while((token=this.expect('<','>','<=','>='))){
+        left={
+            type:AST.BinaryExpression,
+            left:left,
+            operator:token.text,
+            right:this.additive()
+        };
+    }
+    return left;
+};
+AST.prototype.multiplicative = function () {
+    var left = this.unary();
+    var token;
+    if ((token = this.expect('*', '/', '%'))) {
+        left = {
+            type: AST.BinaryExpression, left: left,
+            operator: token.text, right: this.unary()
+        };
+    }
+    return left;
+};
 AST.prototype.unary = function () {
     var token;
-    if (token = this.expect('+','!','-')) {
+    if (token = this.expect('+', '!', '-')) {
         return {
             type: AST.UnaryExpression,
             operator: token.text,
@@ -236,9 +292,9 @@ AST.prototype.unary = function () {
     }
 };
 AST.prototype.assignment = function () {
-    var left = this.additive();
+    var left = this.equality();
     if (this.expect('=')) {
-        var right = this.additive();
+        var right = this.equality();
         return {type: AST.AssignmentExpression, left: left, right: right};
     }
     return left;
@@ -264,6 +320,7 @@ AST.prototype.expect = function (e1, e2, e3, e4) {
         return this.tokens.shift();
     }
 };
+
 AST.prototype.peek = function (e1, e2, e3, e4) {
     if (this.tokens.length > 0) {
         var text = this.tokens[0].text;
@@ -526,13 +583,14 @@ ASTCompiler.prototype.recurse = function (ast, context, create) {
         case AST.UnaryExpression:
             return ast.operator + '(' + this.ifDefined(this.recurse(ast.argument), 0) + ')';
         case AST.BinaryExpression:
-            if (ast.operator ===  '+'  || ast.operator ===  '-' ) {
-                return  '('  + this.ifDefined(this.recurse(ast.left), 0) +  ')'  + ast.operator +
-                    '('  + this.ifDefined(this.recurse(ast.right), 0) +  ')' ;
+            if (ast.operator === '+' || ast.operator === '-') {
+                return '(' + this.ifDefined(this.recurse(ast.left), 0) + ')' + ast.operator +
+                    '(' + this.ifDefined(this.recurse(ast.right), 0) + ')';
             } else {
-                return  '('  + this.recurse(ast.left) +  ')'  +
+                return '(' + this.recurse(ast.left) + ')' +
                     ast.operator +
-                    '('  + this.recurse(ast.right) +  ')' ; }
+                    '(' + this.recurse(ast.right) + ')';
+            }
             break;
 
     }
